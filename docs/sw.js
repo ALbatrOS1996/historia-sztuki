@@ -1,5 +1,5 @@
 // Service worker: powłoka aplikacji w pamięci podręcznej, ilustracje i czcionki zapamiętywane przy pierwszym użyciu.
-const V = 'ars-26c613fedb';
+const V = 'ars-44673372c1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

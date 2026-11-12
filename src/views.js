@@ -276,7 +276,7 @@ V.fiszki = function () {
     { id: 'artysci', n: 'Artyści', d: ARTISTS.length + ' sylwetek twórców', ic: 'brush' },
     { id: 'cechy', n: 'Cechy stylów', d: ERAS.length + ' epok – rozpoznaj po cechach', ic: 'columns' }
   ];
-  return header({ title: 'Fiszki' }) + '<p class="lead small pad">Odwróć kartę, oceń się uczciwie. Karty, których nie znasz, wracają częściej (system Leitnera).</p>' +
+  return header({ title: 'Fiszki' }) + '<p class="lead small pad">Wybierz odpowiedź A–D, a aplikacja ją sprawdzi i odwróci kartę. Karty, przy których się pomylisz, wracają częściej (system Leitnera).</p>' +
     '<div class="decks">' + decks.map(function (d) {
       var cards = deckCards(d.id), known = cards.filter(function (c) { return (S.box[c.key] || 0) >= 3; }).length;
       return '<a class="deck" href="#/fiszki/' + d.id + '/all">' + ic(d.ic) + '<div><b>' + d.n + '</b><span>' + d.d + '</span><div class="bar"><i style="width:' + Math.round(known / cards.length * 100) + '%"></i></div></div><em>' + known + '/' + cards.length + '</em></a>';
@@ -286,10 +286,16 @@ V.fiszki = function () {
 function deckCards(deck, scope) {
   var eras = scopeEras(scope);
   var inS = function (x) { return eras.indexOf(x.era) >= 0; };
-  if (deck === 'pojecia') return TERMS.filter(inS).map(function (t) { return { key: 'f|' + t.key, front: '<h2>' + esc(t.t) + '</h2><span class="muted">' + esc(t.era.n) + '</span>', back: '<p>' + esc(t.d) + '</p>', mk: t.key }; });
-  if (deck === 'dziela') return IMG_WORKS.filter(inS).map(function (w) { return { key: 'f|' + w.key, front: imgTag(w, 'fimg'), back: '<h2>' + esc(w.t) + '</h2><p>' + (w.a ? esc(w.a) + '<br>' : '') + esc(w.y) + ' · ' + esc(w.era.n) + '</p><p class="muted">' + esc(w.d) + '</p>', mk: w.key }; });
-  if (deck === 'artysci') return ARTISTS.filter(inS).map(function (a) { return { key: 'f|a|' + a.n, front: '<h2>' + esc(a.n) + '</h2><span class="muted">' + esc(a.y) + '</span><p class="muted">Epoka? Najważniejsze dzieła?</p>', back: '<p><b>' + esc(a.era.n) + '</b></p><p>' + esc(a.d) + '</p>' }; });
-  return eras.map(function (e) { return { key: 'f|c|' + e.id, front: '<ul class="flist">' + shuffle(e.f).slice(0, 4).map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul><p class="muted">Jaka to epoka?</p>', back: '<h2>' + esc(e.n) + '</h2><p>' + esc(e.y) + '</p>' }; });
+  // każda karta ma odpowiedź (ans) i funkcję dobierającą trzy błędne odpowiedzi – aplikacja sprawdza wybór ABCD
+  var eraWrong = function (e) { return function () { return distract({ era: e, n: e.n }, ERAS.map(function (x) { return { era: x, n: x.n }; }), function (x) { return x.n; }, 3, e); }; };
+  if (deck === 'pojecia') return TERMS.filter(inS).map(function (t) { return { key: 'f|' + t.key, front: '<h2>' + esc(t.t) + '</h2><span class="muted">' + esc(t.era.n) + '</span>', q: 'Co oznacza to pojęcie?', small: true,
+    ans: t.d, wrong: function () { return distract(t, TERMS, function (x) { return x.d; }, 3, t.era); }, back: '<h2>' + esc(t.t) + '</h2><p>' + esc(t.d) + '</p>', mk: t.key }; });
+  if (deck === 'dziela') return IMG_WORKS.filter(inS).map(function (w) { return { key: 'f|' + w.key, front: imgTag(w, 'fimg'), q: 'Jaki to tytuł?',
+    ans: w.t, wrong: function () { return distract(w, IMG_WORKS, function (x) { return x.t; }, 3, w.era); }, back: '<h2>' + esc(w.t) + '</h2><p>' + (w.a ? esc(w.a) + '<br>' : '') + esc(w.y) + ' · ' + esc(w.era.n) + '</p><p class="muted">' + esc(w.d) + '</p>', mk: w.key }; });
+  if (deck === 'artysci') return ARTISTS.filter(inS).map(function (a) { return { key: 'f|a|' + a.n, front: '<h2>' + esc(a.n) + '</h2><span class="muted">' + esc(a.y) + '</span>', q: 'W jakiej epoce tworzył(a)?',
+    ans: a.era.n, wrong: eraWrong(a.era), back: '<h2>' + esc(a.n) + '</h2><p><b>' + esc(a.era.n) + '</b></p><p>' + esc(a.d) + '</p>' }; });
+  return eras.map(function (e) { return { key: 'f|c|' + e.id, front: '<ul class="flist">' + shuffle(e.f).slice(0, 4).map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>', q: 'Jaka to epoka?',
+    ans: e.n, wrong: eraWrong(e), back: '<h2>' + esc(e.n) + '</h2><p>' + esc(e.y) + '</p>' }; });
 }
 var FC = null;
 V.fiszkiRun = function (deck, scope) {
@@ -307,18 +313,26 @@ function showCard() {
     return;
   }
   var c = FC.cards[FC.i], box = S.box[c.key] || 0;
+  c.opts = opts(c.ans, c.wrong()); FC.done = false;
   $('#flash').innerHTML = '<div class="qz-top"><button class="sq" onclick="goBack()" aria-label="Zamknij">' + ic('close') + '</button><div class="qz-bar"><i style="width:' + (FC.i / FC.cards.length * 100) + '%"></i></div><span class="qz-xp">' + (FC.i + 1) + '/' + FC.cards.length + '</span></div>' +
-    '<div class="fcard" id="fcard" onclick="this.classList.toggle(\'flip\')"><div class="face front">' + c.front + '<span class="hint">dotknij, by odwrócić</span></div><div class="face back">' + c.back + '</div></div>' +
+    '<div class="fcard short" id="fcard"><div class="face front">' + c.front + '</div><div class="face back">' + c.back + '</div></div>' +
     '<p class="boxes">' + [0, 1, 2, 3, 4].map(function (b) { return '<i class="' + (b <= box ? 'on' : '') + '"></i>'; }).join('') + '</p>' +
-    '<div class="opts tf"><button onclick="rate(false)">' + ic('x') + 'Jeszcze nie</button><button onclick="rate(true)">' + ic('check') + 'Wiem</button></div>';
+    '<h2 class="qz-q">' + esc(c.q) + '</h2>' +
+    '<div class="opts abcd' + (c.small ? ' small' : '') + '">' + c.opts.map(function (o, i) { return '<button onclick="rate(' + i + ')"><em>' + 'ABCD'[i] + '</em>' + esc(o.l) + '</button>'; }).join('') + '</div>' +
+    '<div class="feedback" id="fb"></div>';
 }
-function rate(ok) {
-  var c = FC.cards[FC.i];
-  if (!$('#fcard').classList.contains('flip') && ok) { $('#fcard').classList.add('flip'); }
+function rate(i) {
+  if (FC.done) return; FC.done = true;
+  var c = FC.cards[FC.i], ok = c.opts[i].ok;
+  $$('.opts button').forEach(function (b, j) { b.disabled = true; if (c.opts[j].ok) b.classList.add('right'); else if (j === i) b.classList.add('wrong'); });
+  $('#fcard').classList.add('flip');
   S.box[c.key] = ok ? Math.min(4, (S.box[c.key] || 0) + 1) : 0;
   if (ok) { FC.known++; addXP(1); }
   if (c.mk) mark(c.mk, ok);
-  save(); FC.i++; setTimeout(showCard, ok ? 250 : 0);
+  save();
+  var fb = $('#fb'); fb.className = 'feedback on ' + (ok ? 'good' : 'bad');
+  fb.innerHTML = '<b>' + (ok ? ic('check') + ' Dobrze!' : ic('x') + ' Nie tym razem – ta karta wróci wcześniej') + '</b>' +
+    '<button class="btn primary wide" onclick="FC.i++;showCard();window.scrollTo(0,0)">' + (FC.i + 1 >= FC.cards.length ? 'Podsumowanie' : 'Dalej') + '</button>';
 }
 
 /* ---------- GALERIA ---------- */
